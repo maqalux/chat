@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Maqalux - Onlayn Çat</title>
+  <style>
+    body { margin: 0; font-family: 'Poppins', sans-serif; background: linear-gradient(135deg, #1e002f, #0055a5); color: white; min-height: 100vh; display: flex; flex-direction: column; }
+    
+    /* Ekran idarəetməsi */
+    .chat-screen { display: none !important; flex-direction: column; height: 100%; }
+    .chat-screen.active { display: flex !important; }
+
+    .social-chat-section { width: 100%; max-width: 800px; height: 600px; background: #efeae2; margin: 30px auto; border-radius: 15px; overflow: hidden; color: #333; display: flex; flex-direction: column; position: relative; }
+    
+    #loginScreen { background: linear-gradient(135deg, #075E54, #128C7E); color: white; justify-content: center; align-items: center; padding: 20px; text-align: center; }
+    .nick-input { width: 280px; padding: 12px; border-radius: 25px; border: none; margin-bottom: 10px; text-align: center; }
+    .login-btn { background: #25D366; color: white; border: none; padding: 12px 40px; border-radius: 25px; cursor: pointer; }
+    
+    .whatsapp-header { background: #075E54; color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; }
+    .chat-messages-area { flex: 1; padding: 20px; overflow-y: auto; background: #e5ddd5; display: flex; flex-direction: column; gap: 10px; }
+    .message-bubble { max-width: 70%; padding: 10px; border-radius: 10px; font-size: 14px; }
+    .me { background: #dcf8c6; align-self: flex-end; }
+    .other { background: white; align-self: flex-start; }
+    .chat-input-bar { background: #f0f0f0; padding: 10px; display: flex; gap: 10px; align-items: center; }
+  </style>
+</head>
+
+<body>
+  <main>
+    <div class="social-chat-section">
+      <div class="chat-screen active" id="loginScreen">
+        <h2>Maqalux Çat</h2>
+        <input type="text" id="nicknameInput" class="nick-input" placeholder="Ləqəbiniz">
+        <input type="password" id="passwordInput" class="nick-input" placeholder="Şifrəniz">
+        <button class="login-btn" onclick="loginOrRegister()">Daxil Ol</button>
+      </div>
+
+      <div class="chat-screen" id="mainChatScreen">
+        <div class="whatsapp-header">
+          <div id="myDisplayNick">İstifadəçi</div>
+          <button onclick="location.reload()" style="background:#d32f2f; color:white; border:none; border-radius:5px; padding:5px 10px;">Çıxış</button>
+        </div>
+        <div class="chat-messages-area" id="chatMessagesArea"></div>
+        <div class="chat-input-bar">
+          <input type="text" id="messageInputField" placeholder="Mesaj yazın...">
+          <button onclick="triggerMessageSend()" style="padding: 10px 20px; background:#075E54; color:white; border:none; border-radius:20px;">Göndər</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io(); // Backend ilə real-vaxt əlaqəsi qurulur
+    window.currentUserNick = "";
+
+    window.loginOrRegister = function() {
+      const nick = document.getElementById('nicknameInput').value.trim();
+      const pass = document.getElementById('passwordInput').value.trim();
+      if(!nick || !pass) return alert("Boşluq saxlamayın!");
+
+      // Backend-ə login məlumatlarını göndərib cavab gözləyirik
+      socket.emit('login', { nick, pass }, (response) => {
+        if (response.success) {
+          window.currentUserNick = nick;
+          document.getElementById('myDisplayNick').innerText = "İstifadəçi: " + nick;
+          
+          document.getElementById('loginScreen').classList.remove('active');
+          document.getElementById('mainChatScreen').classList.add('active');
+        } else {
+          alert(response.message);
+        }
+      });
+    };
+
+    window.triggerMessageSend = () => {
+      const input = document.getElementById('messageInputField');
+      if(!input.value) return;
+      
+      // Mesajı backendə göndəririk (Firebase-ə yazmağı server özü edəcək)
+      socket.emit('sendMessage', { sender: window.currentUserNick, text: input.value });
+      input.value = "";
+    };
+
+    // Mesajı ekrana yazdırmaq üçün funksiya
+    function appendMessage(msg) {
+      const div = document.createElement('div');
+      div.className = 'message-bubble ' + (msg.sender === window.currentUserNick ? 'me' : 'other');
+      div.innerHTML = `<b>${msg.sender}:</b> ${msg.text}`;
+      const area = document.getElementById('chatMessagesArea');
+      area.appendChild(div);
+      area.scrollTop = area.scrollHeight; // Avtomatik aşağı sürüşdür
+    }
+
+    // Qoşulduqda bütün köhnə mesajları yükləmək
+    socket.on('loadAllMessages', (messages) => {
+      document.getElementById('chatMessagesArea').innerHTML = ''; // Əvvəlcə təmizlə
+      messages.forEach(msg => appendMessage(msg));
+    });
+
+    // Yeni mesaj gəldikdə
+    socket.on('receiveMessage', (msg) => {
+      appendMessage(msg);
+    });
+  </script>
+</body>
+</html>
