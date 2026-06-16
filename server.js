@@ -6,15 +6,20 @@ const { getDatabase, ref, push, onChildAdded, get, set } = require('firebase/dat
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
 
-// Render avtomatik olaraq PORT təyin edir, yoxdursa 3000 istifadə olunur
+// ÇATIN SƏHİFƏDƏ İŞLƏMƏSİ ÜÇÜN BU HİSSƏYƏ CORS İCAZƏSİ ƏLAVƏ EDİLDİ
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Bütün kənar saytlardan (məsələn GitHub Pages-dən) gələn qoşulmalara icazə verir
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 
-// İçi HTML ilə dolu olan "public" qovluğunu istifadəçiyə təqdim edirik
 app.use(express.static('public'));
 
-// Bütün Firebase konfiqurasiyaları Render Env vasitəsilə alınır
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
@@ -29,7 +34,6 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getDatabase(firebaseApp);
 const messagesRef = ref(db, 'messages');
 
-// Yeni mesaj Firebase-ə düşəndə bütün istifadəçilərə anında göndər
 onChildAdded(messagesRef, (snapshot) => {
   const newMsg = snapshot.val();
   io.emit('receiveMessage', newMsg);
@@ -38,7 +42,6 @@ onChildAdded(messagesRef, (snapshot) => {
 io.on('connection', (socket) => {
   console.log('Yeni istifadəçi qoşuldu:', socket.id);
 
-  // İstifadəçi qoşulanda köhnə mesajları bazadan çəkib ona göndəririk
   get(messagesRef).then((snapshot) => {
     if (snapshot.exists()) {
       const allMessages = Object.values(snapshot.val());
@@ -46,7 +49,6 @@ io.on('connection', (socket) => {
     }
   }).catch(err => console.error("Köhnə mesajlar çəkilərkən xəta:", err));
 
-  // Login yoxlaması
   socket.on('login', async (data, callback) => {
     try {
       const { nick, pass } = data;
@@ -69,7 +71,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // İstifadəçi yeni mesaj yazanda Firebase-ə əlavə et
   socket.on('sendMessage', (data) => {
     push(messagesRef, data).catch(err => console.error("Mesaj yazılarkən xəta:", err));
   });
