@@ -1,5 +1,3 @@
-require('dotenv').config(); // Lokal mühitdə .env faylındakı gizli açarları oxumaq üçün
-
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -16,7 +14,7 @@ const PORT = process.env.PORT || 3000;
 // İçi HTML ilə dolu olan "public" qovluğunu istifadəçiyə təqdim edirik
 app.use(express.static('public'));
 
-// Bütün Firebase konfiqurasiyaları process.env vasitəsilə gizlədilib
+// Bütün Firebase konfiqurasiyaları Render Env vasitəsilə alınır
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
@@ -46,29 +44,34 @@ io.on('connection', (socket) => {
       const allMessages = Object.values(snapshot.val());
       socket.emit('loadAllMessages', allMessages);
     }
-  });
+  }).catch(err => console.error("Köhnə mesajlar çəkilərkən xəta:", err));
 
   // Login yoxlaması
   socket.on('login', async (data, callback) => {
-    const { nick, pass } = data;
-    const userRef = ref(db, 'users/' + nick);
-    const snapshot = await get(userRef);
+    try {
+      const { nick, pass } = data;
+      const userRef = ref(db, 'users/' + nick);
+      const snapshot = await get(userRef);
 
-    if (snapshot.exists()) {
-      if (snapshot.val().password !== pass) {
-        callback({ success: false, message: "Şifrə yanlışdır!" });
+      if (snapshot.exists()) {
+        if (snapshot.val().password !== pass) {
+          callback({ success: false, message: "Şifrə yanlışdır!" });
+        } else {
+          callback({ success: true });
+        }
       } else {
+        await set(userRef, { password: pass });
         callback({ success: true });
       }
-    } else {
-      await set(userRef, { password: pass });
-      callback({ success: true });
+    } catch (err) {
+      console.error("Login zamanı xəta:", err);
+      callback({ success: false, message: "Sistemdə xəta baş verdi, yenidən cəhd edin." });
     }
   });
 
   // İstifadəçi yeni mesaj yazanda Firebase-ə əlavə et
   socket.on('sendMessage', (data) => {
-    push(messagesRef, data);
+    push(messagesRef, data).catch(err => console.error("Mesaj yazılarkən xəta:", err));
   });
 });
 
