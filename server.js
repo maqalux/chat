@@ -7,10 +7,9 @@ const { getDatabase, ref, push, onChildAdded, get, set } = require('firebase/dat
 const app = express();
 const server = http.createServer(app);
 
-// ÇATIN SƏHİFƏDƏ İŞLƏMƏSİ ÜÇÜN BU HİSSƏYƏ CORS İCAZƏSİ ƏLAVƏ EDİLDİ
 const io = new Server(server, {
   cors: {
-    origin: "*", // Bütün kənar saytlardan (məsələn GitHub Pages-dən) gələn qoşulmalara icazə verir
+    origin: "*",
     methods: ["GET", "POST"],
     credentials: true
   }
@@ -33,8 +32,8 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getDatabase(firebaseApp);
 const messagesRef = ref(db, 'messages');
+const privateMessagesRef = ref(db, 'private_messages'); // Firebase-də şəxsi mesajlar üçün referans
 
-// === YENİ: Aktiv onlayn istifadəçilərin Socket ID-lərini tutmaq üçün obyekt ===
 const activeUsers = {};
 
 onChildAdded(messagesRef, (snapshot) => {
@@ -66,30 +65,42 @@ io.on('connection', (socket) => {
         await set(userRef, { password: pass });
       }
 
-      // === YENİ: Giriş uğurludursa, istifadəçini ləqəbi ilə onlayn siyahısına salırıq ===
       socket.nick = nick;
       activeUsers[nick] = socket.id;
       
       callback({ success: true });
+
+      // === YENİ: İstifadəçi loqin olduqda Firebase-dən ONUN KÖHNƏ ŞƏXSİ MESAJLARINI yükləyirik ===
+      get(privateMessagesRef).then((pSnapshot) => {
+        if (pSnapshot.exists()) {
+          const allPrivate = Object.values(pSnapshot.val());
+          // Yalnız bu istifadəçinin göndərdiyi və ya ona gələn gizli mesajları süzürük
+          const myPrivateMessages = allPrivate.filter(msg => msg.sender === nick || msg.recipient === nick);
+          socket.emit('loadPrivateMessages', myPrivateMessages);
+        }
+      }).catch(err => console.error("Köhnə şəxsi mesajlar yüklənərkən xəta:", err));
+
     } catch (err) {
       console.error("Login zamanı xəta:", err);
       callback({ success: false, message: "Sistemdə xəta baş verdi, yenidən cəhd edin." });
     }
   });
 
-  // === YENİ: ŞƏXSİ MESAJLAŞMA MƏNTİQİ ===
+  // === YENİLƏNDİ: ŞƏXSİ MESAJLAR ARTIQ FİREBASE-Ə YAZILIR ===
   socket.on('sendPrivateMessage', (data) => {
     const { sender, recipient, text } = data;
-    const targetSocketId = activeUsers[recipient]; // Məsələn: Yusifin onlayn ID-si
 
+    // Mesajı Firebase bazasına push edirik (Yadda qalsın deyə)
+    push(privateMessagesRef, { sender, recipient, text }).catch(err => console.error("Şəxsi mesaj bazaya yazılarkən xəta:", err));
+
+    const targetSocketId = activeUsers[recipient];
     if (targetSocketId) {
-      // Mesajı verilən ID-yə sahib ONA və YALNIZ ONA göndəririk
-      io.to(targetSocketId).emit('receivePrivateMessage', { sender, text });
+      io.to(targetSocketId).emit('receivePrivateMessage', { sender, recipient, text });
     } else {
-      // Əgər Yusif onlayn deyilsə, göndərənə (Maqalux-a) xəbərdarlıq göndər
+      // İstifadəçi onlayn olmasa belə mesaj bazaya yazıldı, sadəcə anlıq çatmadığı üçün məlumat veririk
       socket.emit('receivePrivateMessage', { 
         sender: 'Sistem', 
-        text: `⚠️ ${recipient} hazırda onlayn deyil.` 
+        text: `⚠️ ${recipient} hazırda onlayn deyil, lakin mesajınız qeydə alındı. Daxil olduqda görəcək.` 
       });
     }
   });
@@ -98,10 +109,8 @@ io.on('connection', (socket) => {
     push(messagesRef, data).catch(err => console.error("Mesaj yazılarkən xəta:", err));
   });
 
-  // === YENİ: İstifadəçi çıxış edəndə və ya səhifəni bağlayanda siyahıdan silirik ===
   socket.on('disconnect', () => {
     if (socket.nick) {
-      console.log(`${socket.nick} çata olan bağlantısını kəsdi.`);
       delete activeUsers[socket.nick];
     }
   });
