@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { initializeApp } = require('firebase/app');
-const { getDatabase, ref, push, onChildAdded, get, set } = require('firebase/database');
+const { getDatabase, ref, push, onChildAdded, onChildChanged, get, set, update } = require('firebase/database');
 
 const app = express();
 const server = http.createServer(app);
@@ -16,7 +16,6 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3000;
-
 app.use(express.static('public'));
 
 const firebaseConfig = {
@@ -32,90 +31,139 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getDatabase(firebaseApp);
 const messagesRef = ref(db, 'messages');
-const privateMessagesRef = ref(db, 'private_messages'); // Firebase-də şəxsi mesajlar üçün referans
+const privateMessagesRef = ref(db, 'private_messages');
 
 const activeUsers = {};
 
+// Real-time: Yeni mesaj əlavə olunanda hamıya göndər
 onChildAdded(messagesRef, (snapshot) => {
-  const newMsg = snapshot.val();
-  io.emit('receiveMessage', newMsg);
+  io.emit('receiveMessage', snapshot.val());
+});
+
+// Real-time: Mesaj silinəndə/dəyişəndə hamıya xəbər et
+onChildChanged(messagesRef, (snapshot) => {
+  io.emit('messageUpdated', snapshot.val());
 });
 
 io.on('connection', (socket) => {
   console.log('Yeni istifadəçi qoşuldu:', socket.id);
 
+  // Köhnə ümumi mesajları yüklə
   get(messagesRef).then((snapshot) => {
     if (snapshot.exists()) {
       const allMessages = Object.values(snapshot.val());
       socket.emit('loadAllMessages', allMessages);
     }
-  }).catch(err => console.error("Köhnə mesajlar çəkilərkən xəta:", err));
+  }).catch(err => console.error("Köhnə mesaj xətası:", err));
 
+  // Giriş və Qeydiyyat Sistemi
   socket.on('login', async (data, callback) => {
     try {
       const { nick, pass } = data;
       const userRef = ref(db, 'users/' + nick);
       const snapshot = await get(userRef);
 
+      let userRole = "user";
+
       if (snapshot.exists()) {
         if (snapshot.val().password !== pass) {
           return callback({ success: false, message: "Şifrə yanlışdır!" });
         }
+        userRole = snapshot.val().role || "user";
       } else {
-        await set(userRef, { password: pass });
+        // Yeni istifadəçi avtomatik qeydiyyatdan keçir
+        await set(userRef, { password: pass, role: "user" });
       }
 
       socket.nick = nick;
+      socket.role = userRole;
       activeUsers[nick] = socket.id;
       
-      callback({ success: true });
+      callback({ success: true, role: userRole });
 
-      // === YENİ: İstifadəçi loqin olduqda Firebase-dən ONUN KÖHNƏ ŞƏXSİ MESAJLARINI yükləyirik ===
+      // Aktiv istifadəçi siyahısını yenilə və hamıya bəyan et
+      io.emit('updateActiveUsers', Object.keys(activeUsers));
+
+      // Şəxsi mesajları yüklə
       get(privateMessagesRef).then((pSnapshot) => {
         if (pSnapshot.exists()) {
           const allPrivate = Object.values(pSnapshot.val());
-          // Yalnız bu istifadəçinin göndərdiyi və ya ona gələn gizli mesajları süzürük
           const myPrivateMessages = allPrivate.filter(msg => msg.sender === nick || msg.recipient === nick);
           socket.emit('loadPrivateMessages', myPrivateMessages);
         }
-      }).catch(err => console.error("Köhnə şəxsi mesajlar yüklənərkən xəta:", err));
+      }).catch(err => console.error("Şəxsi mesaj yükləmə xətası:", err));
 
     } catch (err) {
-      console.error("Login zamanı xəta:", err);
-      callback({ success: false, message: "Sistemdə xəta baş verdi, yenidən cəhd edin." });
+      console.error("Login xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
     }
   });
 
-  // === YENİLƏNDİ: ŞƏXSİ MESAJLAR ARTIQ FİREBASE-Ə YAZILIR ===
-  socket.on('sendPrivateMessage', (data) => {
-    const { sender, recipient, text } = data;
+  // Ümumi Mesaj Göndərilməsi (Mətn və ya Şəkil)
+  socket.on('sendMessage', (data) => {
+    const newMsgRef = push(messagesRef);
+    const msgData = {
+      id: newMsgRef.key,
+      sender: data.sender,
+      text: data.text || "",
+      mediaType: data.mediaType || "text", // "text" və ya "image"
+      mediaUrl: data.mediaUrl || "",
+      isDeleted: false
+    };
+    set(newMsgRef, msgData).catch(err => console.error("Mesaj yazılma xətası:", err));
+  });
 
-    // Mesajı Firebase bazasına push edirik (Yadda qalsın deyə)
-    push(privateMessagesRef, { sender, recipient, text }).catch(err => console.error("Şəxsi mesaj bazaya yazılarkən xəta:", err));
+  // Şəxsi Mesaj Göndərilməsi
+  socket.on('sendPrivateMessage', (data) => {
+    const { sender, recipient, text, mediaType, mediaUrl } = data;
+    const newPrivRef = push(privateMessagesRef);
+    
+    const privData = {
+      id: newPrivRef.key,
+      sender,
+      recipient,
+      text: text || "",
+      mediaType: mediaType || "text",
+      mediaUrl: mediaUrl || "",
+      isDeleted: false
+    };
+
+    set(newPrivRef, privData).catch(err => console.error("Şəxsi mesaj yazılma xətası:", err));
 
     const targetSocketId = activeUsers[recipient];
     if (targetSocketId) {
-      io.to(targetSocketId).emit('receivePrivateMessage', { sender, recipient, text });
+      io.to(targetSocketId).emit('receivePrivateMessage', privData);
     } else {
-      // İstifadəçi onlayn olmasa belə mesaj bazaya yazıldı, sadəcə anlıq çatmadığı üçün məlumat veririk
       socket.emit('receivePrivateMessage', { 
         sender: 'Sistem', 
-        text: `⚠️ ${recipient} hazırda onlayn deyil, lakin mesajınız qeydə alındı. Daxil olduqda görəcək.` 
+        text: `⚠️ ${recipient} onlayn deyil, mesaj qeydə alındı.`,
+        mediaType: 'text'
       });
     }
   });
 
-  socket.on('sendMessage', (data) => {
-    push(messagesRef, data).catch(err => console.error("Mesaj yazılarkən xəta:", err));
+  // Admin Mesaj Silmə Sistemi
+  socket.on('deleteMessage', async (msgId) => {
+    if (socket.role === 'admin') {
+      const specificMsgRef = ref(db, `messages/${msgId}`);
+      update(specificMsgRef, {
+        text: "🗑️ Bu mesaj admin tərəfindən silinib.",
+        mediaType: "text",
+        mediaUrl: "",
+        isDeleted: true
+      }).catch(err => console.error("Silinmə xətası:", err));
+    }
   });
 
+  // Bağlantı kəsiləndə
   socket.on('disconnect', () => {
     if (socket.nick) {
       delete activeUsers[socket.nick];
+      io.emit('updateActiveUsers', Object.keys(activeUsers));
     }
   });
 });
 
 server.listen(PORT, () => {
-  console.log(`Server ${PORT} portunda fəaliyyətə başladı...`);
+  console.log(`Server ${PORT} portunda aktivdir...`);
 });
