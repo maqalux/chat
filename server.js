@@ -64,22 +64,26 @@ io.on('connection', (socket) => {
       const snapshot = await get(userRef);
 
       let userRole = "user";
+      let userAvatar = ""; // Şəklin linkini saxlamaq üçün
 
       if (snapshot.exists()) {
         if (snapshot.val().password !== pass) {
           return callback({ success: false, message: "Şifrə yanlışdır!" });
         }
         userRole = snapshot.val().role || "user";
+        // ✅ Giriş edəndə istifadəçinin Firebase-dəki şəkil linkini götürürük
+        userAvatar = snapshot.val().avatarUrl || ""; 
       } else {
         // Yeni istifadəçi avtomatik qeydiyyatdan keçir
-        await set(userRef, { password: pass, role: "user" });
+        await set(userRef, { password: pass, role: "user", avatarUrl: "" });
       }
 
       socket.nick = nick;
       socket.role = userRole;
       activeUsers[nick] = socket.id;
       
-      callback({ success: true, role: userRole });
+      // ✅ callback ilə həm rolu, həm də profil şəklini klientə (brauzerə) qaytarırıq
+      callback({ success: true, role: userRole, avatarUrl: userAvatar });
 
       // Aktiv istifadəçi siyahısını yenilə və hamıya bəyan et
       io.emit('updateActiveUsers', Object.keys(activeUsers));
@@ -96,6 +100,20 @@ io.on('connection', (socket) => {
     } catch (err) {
       console.error("Login xətası:", err);
       callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  // ✅ PROFIL ŞƏKLİNİ FIREBASE BAZASINDA YENİLƏYƏN HİSSƏ
+  socket.on('updateAvatar', async (data) => {
+    try {
+      const { nick, avatarUrl } = data;
+      const userRef = ref(db, 'users/' + nick);
+      
+      // Firebase-də həmin istifadəçinin altına 'avatarUrl' sahəsini yazırıq (və ya yeniləyirik)
+      await update(userRef, { avatarUrl: avatarUrl });
+      console.log(`Profil şəkli Firebase-də yeniləndi: ${nick}`);
+    } catch (err) {
+      console.error("Firebase avatar yeniləmə xətası:", err);
     }
   });
 
