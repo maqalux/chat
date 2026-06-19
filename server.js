@@ -3,7 +3,6 @@ const http = require('http');
 const { Server } = require('socket.io');
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, push, onChildAdded, onChildChanged, get, set, update, remove } = require('firebase/database');
-
 const app = express();
 const server = http.createServer(app);
 
