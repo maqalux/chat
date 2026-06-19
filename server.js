@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const { initializeApp } = require('firebase/app');
 const { getDatabase, ref, push, onChildAdded, onChildChanged, get, set, update, remove } = require('firebase/database');
+
 const app = express();
 const server = http.createServer(app);
 
@@ -35,11 +36,11 @@ const messagesRef = ref(db, 'messages');
 const privateMessagesRef = ref(db, 'private_messages');
 const usersRef = ref(db, 'users');
 
-// nick -> socket.id (yalnÄ±z aktiv/onlayn istifadÉ™Ã§ilÉ™r)
+// nick -> socket.id (yalnız aktiv/onlayn istifadəçilər)
 const activeUsers = {};
 
 // ---------------------------------------------------------------------------
-// ROL Ä°ERARXÄ°YASI
+// ROL İERARXİYASI
 // ---------------------------------------------------------------------------
 const ROLE_RANK = { admin: 3, moderator: 2, user: 1 };
 function roleRank(role) {
@@ -47,7 +48,7 @@ function roleRank(role) {
 }
 
 // ---------------------------------------------------------------------------
-// REAL-TIME: Yeni Ã¼mumi mesaj É™lavÉ™ olunanda hamÄ±ya gÃ¶ndÉ™r
+// REAL-TIME: Yeni ümumi mesaj əlavə olunanda hamıya göndər
 // ---------------------------------------------------------------------------
 onChildAdded(messagesRef, (snapshot) => {
   io.emit('receiveMessage', snapshot.val());
@@ -68,7 +69,7 @@ onChildChanged(privateMessagesRef, (snapshot) => {
 });
 
 // ---------------------------------------------------------------------------
-// KÃ–MÆKÃ‡Ä° FUNKSÄ°YALAR
+// KÖMƏKÇİ FUNKSİYALAR
 // ---------------------------------------------------------------------------
 async function getUserData(nick) {
   const snapshot = await get(ref(db, 'users/' + nick));
@@ -98,21 +99,21 @@ function generateResetCode() {
 }
 
 // ---------------------------------------------------------------------------
-// SOCKET BAÄžLANTISI
+// SOCKET BAĞLANTISI
 // ---------------------------------------------------------------------------
 io.on('connection', (socket) => {
-  console.log('Yeni istifadÉ™Ã§i qoÅŸuldu:', socket.id);
+  console.log('Yeni istifadəçi qoşuldu:', socket.id);
 
-  // KÃ¶hnÉ™ Ã¼mumi mesajlarÄ± yÃ¼klÉ™
+  // Köhnə ümumi mesajları yüklə
   get(messagesRef).then((snapshot) => {
     if (snapshot.exists()) {
       const allMessages = Object.values(snapshot.val());
       socket.emit('loadAllMessages', allMessages);
     }
-  }).catch(err => console.error("KÃ¶hnÉ™ mesaj xÉ™tasÄ±:", err));
+  }).catch(err => console.error("Köhnə mesaj xətası:", err));
 
   // -------------------------------------------------------------------------
-  // GÄ°RÄ°Åž VÆ QEYDÄ°YYAT SÄ°STEMÄ°
+  // GİRİŞ VƏ QEYDİYYAT SİSTEMİ
   // -------------------------------------------------------------------------
   socket.on('login', async (data, callback) => {
     try {
@@ -127,16 +128,16 @@ io.on('connection', (socket) => {
         const existing = snapshot.val();
 
         if (existing.isBanned) {
-          return callback({ success: false, message: "HesabÄ±nÄ±z qara siyahÄ±ya alÄ±nÄ±b. MesajlaÅŸma vÉ™ giriÅŸ bloklanÄ±b." });
+          return callback({ success: false, message: "Hesabınız qara siyahıya alınıb. Mesajlaşma və giriş bloklanıb." });
         }
 
         if (existing.password !== pass) {
-          return callback({ success: false, message: "ÅžifrÉ™ yanlÄ±ÅŸdÄ±r!" });
+          return callback({ success: false, message: "Şifrə yanlışdır!" });
         }
         userRole = existing.role || "user";
         userAvatar = existing.avatarUrl || "";
       } else {
-        // Yeni istifadÉ™Ã§i avtomatik qeydiyyatdan keÃ§ir
+        // Yeni istifadəçi avtomatik qeydiyyatdan keçir
         await set(userRef, {
           password: pass,
           role: "user",
@@ -155,38 +156,38 @@ io.on('connection', (socket) => {
 
       await broadcastUserList();
 
-      // ÅžÉ™xsi mesajlarÄ± yÃ¼klÉ™
+      // Şəxsi mesajları yüklə
       get(privateMessagesRef).then((pSnapshot) => {
         if (pSnapshot.exists()) {
           const allPrivate = Object.values(pSnapshot.val());
           const myPrivateMessages = allPrivate.filter(msg => msg.sender === nick || msg.recipient === nick);
           socket.emit('loadPrivateMessages', myPrivateMessages);
         }
-      }).catch(err => console.error("ÅžÉ™xsi mesaj yÃ¼klÉ™mÉ™ xÉ™tasÄ±:", err));
+      }).catch(err => console.error("Şəxsi mesaj yükləmə xətası:", err));
 
     } catch (err) {
-      console.error("Login xÉ™tasÄ±:", err);
-      callback({ success: false, message: "Sistem xÉ™tasÄ± baÅŸ verdi." });
+      console.error("Login xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
     }
   });
 
   // -------------------------------------------------------------------------
-  // GOOGLE Ä°LÆ GÄ°RÄ°Åž
-  // Frontend Firebase client SDK ilÉ™ Google popup/redirect giriÅŸini Ã¶zÃ¼ edir,
-  // alÄ±nan istifadÉ™Ã§i mÉ™lumatlarÄ±nÄ± (uid, e-poÃ§t, ad, ÅŸÉ™kil) bura gÃ¶ndÉ™rir.
-  // Biz hÉ™min uid É™sasÄ±nda istifadÉ™Ã§i qeydini yaradÄ±r/varsa gÉ™tiririk.
+  // GOOGLE İLƏ GİRİŞ
+  // Frontend Firebase client SDK ilə Google popup/redirect girişini özü edir,
+  // alınan istifadəçi məlumatlarını (uid, e-poçt, ad, şəkil) bura göndərir.
+  // Biz həmin uid əsasında istifadəçi qeydini yaradır/varsa gətiririk.
   // -------------------------------------------------------------------------
   socket.on('googleLogin', async (data, callback) => {
     try {
       const { displayName, photoUrl, googleEmail, googleUid } = data;
 
       if (!googleUid || !googleEmail) {
-        return callback({ success: false, message: "Google hesabÄ±ndan mÉ™lumat alÄ±na bilmÉ™di." });
+        return callback({ success: false, message: "Google hesabından məlumat alına bilmədi." });
       }
 
       const baseNick = (displayName || googleEmail.split('@')[0]).trim().replace(/\s+/g, '_');
 
-      // ÆvvÉ™lcÉ™ bu googleUid ilÉ™ qeydiyyatlÄ± istifadÉ™Ã§i axtarÄ±rÄ±q
+      // Əvvəlcə bu googleUid ilə qeydiyyatlı istifadəçi axtarırıq
       const allUsersSnap = await get(usersRef);
       let existingNick = null;
 
@@ -207,12 +208,12 @@ io.on('connection', (socket) => {
       if (existingNick) {
         const existing = (await get(ref(db, 'users/' + existingNick))).val();
         if (existing.isBanned) {
-          return callback({ success: false, message: "HesabÄ±nÄ±z qara siyahÄ±ya alÄ±nÄ±b. MesajlaÅŸma vÉ™ giriÅŸ bloklanÄ±b." });
+          return callback({ success: false, message: "Hesabınız qara siyahıya alınıb. Mesajlaşma və giriş bloklanıb." });
         }
         userRole = existing.role || "user";
         userAvatar = existing.avatarUrl || photoUrl || "";
       } else {
-        // Yeni nick tap (toqquÅŸma yoxlanÄ±ÅŸÄ±)
+        // Yeni nick tap (toqquşma yoxlanışı)
         let candidate = baseNick;
         let counter = 1;
         while ((await get(ref(db, 'users/' + candidate))).exists()) {
@@ -247,16 +248,16 @@ io.on('connection', (socket) => {
           const myPrivateMessages = allPrivate.filter(msg => msg.sender === finalNick || msg.recipient === finalNick);
           socket.emit('loadPrivateMessages', myPrivateMessages);
         }
-      }).catch(err => console.error("ÅžÉ™xsi mesaj yÃ¼klÉ™mÉ™ xÉ™tasÄ±:", err));
+      }).catch(err => console.error("Şəxsi mesaj yükləmə xətası:", err));
 
     } catch (err) {
-      console.error("Google login xÉ™tasÄ±:", err);
-      callback({ success: false, message: "Google ilÉ™ giriÅŸ zamanÄ± sistem xÉ™tasÄ± baÅŸ verdi." });
+      console.error("Google login xətası:", err);
+      callback({ success: false, message: "Google ilə giriş zamanı sistem xətası baş verdi." });
     }
   });
 
   // -------------------------------------------------------------------------
-  // ÅžÄ°FRÆNÄ° UNUTDUM â€” KOD GÃ–NDÆRMÆ VÆ TÆSDÄ°Q
+  // ŞİFRƏNİ UNUTDUM — KOD GÖNDƏRMƏ VƏ TƏSDİQ
   // -------------------------------------------------------------------------
   socket.on('requestPasswordReset', async (data, callback) => {
     try {
@@ -264,27 +265,27 @@ io.on('connection', (socket) => {
       const userData = await getUserData(nick);
 
       if (!userData) {
-        return callback({ success: false, message: "Bu istifadÉ™Ã§i adÄ± ilÉ™ qeydiyyat tapÄ±lmadÄ±." });
+        return callback({ success: false, message: "Bu istifadəçi adı ilə qeydiyyat tapılmadı." });
       }
       if (!userData.email) {
-        return callback({ success: false, message: "Bu hesaba e-poÃ§t Ã¼nvanÄ± baÄŸlanmayÄ±b, ÅŸifrÉ™ni bÉ™rpa etmÉ™k mÃ¼mkÃ¼n deyil." });
+        return callback({ success: false, message: "Bu hesaba e-poçt ünvanı bağlanmayıb, şifrəni bərpa etmək mümkün deyil." });
       }
 
       const code = generateResetCode();
       await set(ref(db, 'passwordResets/' + nick), {
         code,
-        expiresAt: Date.now() + 15 * 60 * 1000 // 15 dÉ™qiqÉ™
+        expiresAt: Date.now() + 15 * 60 * 1000 // 15 dəqiqə
       });
 
-      // Qeyd: real e-poÃ§t gÃ¶ndÉ™rmÉ™ inteqrasiyasÄ± (mÉ™s. nodemailer) burada
-      // qoÅŸulmalÄ±dÄ±r. HazÄ±rkÄ± mÉ™rhÉ™lÉ™dÉ™ kodu cavab olaraq qaytarÄ±rÄ±q ki,
-      // frontend "e-poÃ§tunuza gÃ¶ndÉ™rildi" simulyasiyasÄ±nÄ± gÃ¶stÉ™rÉ™ bilsin.
-      console.log(`ÅžifrÉ™ bÉ™rpa kodu (${nick}): ${code}`);
+      // Qeyd: real e-poçt göndərmə inteqrasiyası (məs. nodemailer) burada
+      // qoşulmalıdır. Hazırkı mərhələdə kodu cavab olaraq qaytarırıq ki,
+      // frontend "e-poçtunuza göndərildi" simulyasiyasını göstərə bilsin.
+      console.log(`Şifrə bərpa kodu (${nick}): ${code}`);
 
-      callback({ success: true, message: "BÉ™rpa kodu e-poÃ§t Ã¼nvanÄ±nÄ±za gÃ¶ndÉ™rildi.", debugCode: code });
+      callback({ success: true, message: "Bərpa kodu e-poçt ünvanınıza göndərildi.", debugCode: code });
     } catch (err) {
-      console.error("ÅžifrÉ™ bÉ™rpa tÉ™lÉ™bi xÉ™tasÄ±:", err);
-      callback({ success: false, message: "Sistem xÉ™tasÄ± baÅŸ verdi." });
+      console.error("Şifrə bərpa tələbi xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
     }
   });
 
@@ -294,106 +295,106 @@ io.on('connection', (socket) => {
       const resetSnap = await get(ref(db, 'passwordResets/' + nick));
 
       if (!resetSnap.exists()) {
-        return callback({ success: false, message: "BÉ™rpa tÉ™lÉ™bi tapÄ±lmadÄ±, yenidÉ™n cÉ™hd edin." });
+        return callback({ success: false, message: "Bərpa tələbi tapılmadı, yenidən cəhd edin." });
       }
 
       const resetData = resetSnap.val();
       if (Date.now() > resetData.expiresAt) {
         await remove(ref(db, 'passwordResets/' + nick));
-        return callback({ success: false, message: "BÉ™rpa kodunun vaxtÄ± bitib, yenidÉ™n tÉ™lÉ™b edin." });
+        return callback({ success: false, message: "Bərpa kodunun vaxtı bitib, yenidən tələb edin." });
       }
 
       if (resetData.code !== code) {
-        return callback({ success: false, message: "Daxil etdiyiniz kod yanlÄ±ÅŸdÄ±r." });
+        return callback({ success: false, message: "Daxil etdiyiniz kod yanlışdır." });
       }
 
       if (!newPassword || newPassword.length < 4) {
-        return callback({ success: false, message: "Yeni ÅŸifrÉ™ É™n azÄ± 4 simvol olmalÄ±dÄ±r." });
+        return callback({ success: false, message: "Yeni şifrə ən azı 4 simvol olmalıdır." });
       }
 
       await update(ref(db, 'users/' + nick), { password: newPassword });
       await remove(ref(db, 'passwordResets/' + nick));
 
-      callback({ success: true, message: "ÅžifrÉ™niz uÄŸurla yenilÉ™ndi! Ä°ndi yeni ÅŸifrÉ™ ilÉ™ daxil ola bilÉ™rsiniz." });
+      callback({ success: true, message: "Şifrəniz uğurla yeniləndi! İndi yeni şifrə ilə daxil ola bilərsiniz." });
     } catch (err) {
-      console.error("ÅžifrÉ™ bÉ™rpa tÉ™sdiq xÉ™tasÄ±:", err);
-      callback({ success: false, message: "Sistem xÉ™tasÄ± baÅŸ verdi." });
+      console.error("Şifrə bərpa təsdiq xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
     }
   });
 
   // -------------------------------------------------------------------------
-  // PROFÄ°L AYARLARI: ÅžÄ°FRÆ YENÄ°LÆMÆ (kÃ¶hnÉ™ ÅŸifrÉ™ mÉ™cburi)
+  // PROFİL AYARLARI: ŞİFRƏ YENİLƏMƏ (köhnə şifrə məcburi)
   // -------------------------------------------------------------------------
   socket.on('updatePassword', async (data, callback) => {
     try {
       const { nick, oldPassword, newPassword } = data;
       if (!socket.nick || socket.nick !== nick) {
-        return callback({ success: false, message: "Bu É™mÉ™liyyat Ã¼Ã§Ã¼n icazÉ™niz yoxdur." });
+        return callback({ success: false, message: "Bu əməliyyat üçün icazəniz yoxdur." });
       }
 
       const userData = await getUserData(nick);
       if (!userData) {
-        return callback({ success: false, message: "Ä°stifadÉ™Ã§i tapÄ±lmadÄ±." });
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
       }
       if (userData.password !== oldPassword) {
-        return callback({ success: false, message: "KÃ¶hnÉ™ ÅŸifrÉ™ yanlÄ±ÅŸdÄ±r." });
+        return callback({ success: false, message: "Köhnə şifrə yanlışdır." });
       }
       if (!newPassword || newPassword.length < 4) {
-        return callback({ success: false, message: "Yeni ÅŸifrÉ™ É™n azÄ± 4 simvol olmalÄ±dÄ±r." });
+        return callback({ success: false, message: "Yeni şifrə ən azı 4 simvol olmalıdır." });
       }
 
       await update(ref(db, 'users/' + nick), { password: newPassword });
-      callback({ success: true, message: "ÅžifrÉ™niz uÄŸurla yenilÉ™ndi!" });
+      callback({ success: true, message: "Şifrəniz uğurla yeniləndi!" });
     } catch (err) {
-      console.error("ÅžifrÉ™ yenilÉ™mÉ™ xÉ™tasÄ±:", err);
-      callback({ success: false, message: "Sistem xÉ™tasÄ± baÅŸ verdi." });
+      console.error("Şifrə yeniləmə xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
     }
   });
 
   // -------------------------------------------------------------------------
-  // PROFÄ°L AYARLARI: E-POÃ‡T YENÄ°LÆMÆ (tÉ™sdiq tÉ™lÉ™b olunmur)
+  // PROFİL AYARLARI: E-POÇT YENİLƏMƏ (təsdiq tələb olunmur)
   // -------------------------------------------------------------------------
   socket.on('updateEmail', async (data, callback) => {
     try {
       const { nick, newEmail } = data;
       if (!socket.nick || socket.nick !== nick) {
-        return callback({ success: false, message: "Bu É™mÉ™liyyat Ã¼Ã§Ã¼n icazÉ™niz yoxdur." });
+        return callback({ success: false, message: "Bu əməliyyat üçün icazəniz yoxdur." });
       }
       if (!newEmail || !newEmail.includes('@')) {
-        return callback({ success: false, message: "DÃ¼zgÃ¼n e-poÃ§t Ã¼nvanÄ± daxil edin." });
+        return callback({ success: false, message: "Düzgün e-poçt ünvanı daxil edin." });
       }
 
       await update(ref(db, 'users/' + nick), { email: newEmail });
-      callback({ success: true, message: "E-poÃ§t Ã¼nvanÄ±nÄ±z uÄŸurla yenilÉ™ndi!" });
+      callback({ success: true, message: "E-poçt ünvanınız uğurla yeniləndi!" });
     } catch (err) {
-      console.error("E-poÃ§t yenilÉ™mÉ™ xÉ™tasÄ±:", err);
-      callback({ success: false, message: "Sistem xÉ™tasÄ± baÅŸ verdi." });
+      console.error("E-poçt yeniləmə xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
     }
   });
 
   // -------------------------------------------------------------------------
-  // PROFÄ°L ÅžÆKLÄ°NÄ° FIREBASE BAZASINDA YENÄ°LÆYÆN HÄ°SSÆ
+  // PROFİL ŞƏKLİNİ FIREBASE BAZASINDA YENİLƏYƏN HİSSƏ
   // -------------------------------------------------------------------------
   socket.on('updateAvatar', async (data) => {
     try {
       const { nick, avatarUrl } = data;
       const userRef = ref(db, 'users/' + nick);
       await update(userRef, { avatarUrl: avatarUrl });
-      console.log(`Profil ÅŸÉ™kli Firebase-dÉ™ yenilÉ™ndi: ${nick}`);
+      console.log(`Profil şəkli Firebase-də yeniləndi: ${nick}`);
       await broadcastUserList();
     } catch (err) {
-      console.error("Firebase avatar yenilÉ™mÉ™ xÉ™tasÄ±:", err);
+      console.error("Firebase avatar yeniləmə xətası:", err);
     }
   });
 
   // -------------------------------------------------------------------------
-  // ÃœMUMÄ° MESAJ GÃ–NDÆRÄ°LMÆSÄ° (MÉ™tn, ÅžÉ™kil, GIF, Stiker, Reply, Forward)
+  // ÜMUMİ MESAJ GÖNDƏRİLMƏSİ (Mətn, Şəkil, GIF, Stiker, Reply, Forward)
   // -------------------------------------------------------------------------
   socket.on('sendMessage', async (data) => {
     try {
       const senderData = await getUserData(data.sender);
       if (senderData && senderData.isBanned) {
-        socket.emit('actionBlocked', { message: "Qara siyahÄ±da olduÄŸunuz Ã¼Ã§Ã¼n mesaj gÃ¶ndÉ™rÉ™ bilmÉ™zsiniz." });
+        socket.emit('actionBlocked', { message: "Qara siyahıda olduğunuz üçün mesaj göndərə bilməzsiniz." });
         return;
       }
 
@@ -405,8 +406,8 @@ io.on('connection', (socket) => {
         text: data.text || "",
         mediaType: data.mediaType || "text", // text | image | gif | sticker
         mediaUrl: data.mediaUrl || "",
-        replyTo: data.replyTo || null, // { id, sender, text } qÄ±sa snapshot
-        forwardedFrom: data.forwardedFrom || null, // orijinal gÃ¶ndÉ™rÉ™nin adÄ±
+        replyTo: data.replyTo || null, // { id, sender, text } qısa snapshot
+        forwardedFrom: data.forwardedFrom || null, // orijinal göndərənin adı
         reactions: {},
         readBy: [],
         deliveredTo: [],
@@ -415,12 +416,12 @@ io.on('connection', (socket) => {
       };
       await set(newMsgRef, msgData);
     } catch (err) {
-      console.error("Mesaj yazÄ±lma xÉ™tasÄ±:", err);
+      console.error("Mesaj yazılma xətası:", err);
     }
   });
 
   // -------------------------------------------------------------------------
-  // ÅžÆXSÄ° MESAJ GÃ–NDÆRÄ°LMÆSÄ°
+  // ŞƏXSİ MESAJ GÖNDƏRİLMƏSİ
   // -------------------------------------------------------------------------
   socket.on('sendPrivateMessage', async (data) => {
     try {
@@ -428,7 +429,7 @@ io.on('connection', (socket) => {
 
       const senderData = await getUserData(sender);
       if (senderData && senderData.isBanned) {
-        socket.emit('actionBlocked', { message: "Qara siyahÄ±da olduÄŸunuz Ã¼Ã§Ã¼n mesaj gÃ¶ndÉ™rÉ™ bilmÉ™zsiniz." });
+        socket.emit('actionBlocked', { message: "Qara siyahıda olduğunuz üçün mesaj göndərə bilməzsiniz." });
         return;
       }
 
@@ -458,25 +459,25 @@ io.on('connection', (socket) => {
         privData.deliveredTo = [recipient];
         await update(ref(db, `private_messages/${privData.id}`), { deliveredTo: [recipient] });
         io.to(targetSocketId).emit('receivePrivateMessage', privData);
-        socket.emit('receivePrivateMessage', privData); // gÃ¶ndÉ™rÉ™nÉ™ dÉ™ É™ks-sÉ™dasÄ±
+        socket.emit('receivePrivateMessage', privData); // göndərənə də əks-sədası
       } else {
         socket.emit('receivePrivateMessage', privData);
         socket.emit('receivePrivateMessage', {
           sender: 'Sistem',
           recipient: sender,
-          text: `âš ï¸ ${recipient} onlayn deyil, mesaj qeydÉ™ alÄ±ndÄ±.`,
+          text: `⚠️ ${recipient} onlayn deyil, mesaj qeydə alındı.`,
           mediaType: 'text',
           reactions: {},
           isDeleted: false
         });
       }
     } catch (err) {
-      console.error("ÅžÉ™xsi mesaj yazÄ±lma xÉ™tasÄ±:", err);
+      console.error("Şəxsi mesaj yazılma xətası:", err);
     }
   });
 
   // -------------------------------------------------------------------------
-  // MESAJ OXUNDU / Ã‡ATDIRILDI STATUSU (WhatsApp tipli tÉ™k/cÃ¼t xÉ™tt)
+  // MESAJ OXUNDU / ÇATDIRILDI STATUSU (WhatsApp tipli tək/cüt xətt)
   // -------------------------------------------------------------------------
   socket.on('markDelivered', async (data) => {
     try {
@@ -489,7 +490,7 @@ io.on('connection', (socket) => {
       deliveredTo.add(reader);
       await update(ref(db, path), { deliveredTo: Array.from(deliveredTo) });
     } catch (err) {
-      console.error("Ã‡atdÄ±rÄ±lma statusu xÉ™tasÄ±:", err);
+      console.error("Çatdırılma statusu xətası:", err);
     }
   });
 
@@ -506,12 +507,12 @@ io.on('connection', (socket) => {
       deliveredTo.add(reader);
       await update(ref(db, path), { readBy: Array.from(readBy), deliveredTo: Array.from(deliveredTo) });
     } catch (err) {
-      console.error("Oxunma statusu xÉ™tasÄ±:", err);
+      console.error("Oxunma statusu xətası:", err);
     }
   });
 
   // -------------------------------------------------------------------------
-  // MESAJA REAKSÄ°YA VERMÆ
+  // MESAJA REAKSİYA VERMƏ
   // -------------------------------------------------------------------------
   socket.on('addReaction', async (data) => {
     try {
@@ -522,7 +523,311 @@ io.on('connection', (socket) => {
       const msg = snap.val();
       const reactions = msg.reactions || {};
 
-      // Eyni emojini yenidÉ™n basarsa, reaksiyanÄ± geri gÃ¶tÃ¼rÃ¼rÃ¼k (toggle)
+      // Eyni emojini yenidən basarsa, reaksiyanı geri götürürük (toggle)
       if (reactions[nick] === emoji) {
         delete reactions[nick];
-      } else 
+      } else {
+        reactions[nick] = emoji;
+      }
+
+      await update(ref(db, path), { reactions });
+
+      if (isPrivate) {
+        const targets = new Set([msg.sender, msg.recipient]);
+        targets.forEach((n) => {
+          const sId = activeUsers[n];
+          if (sId) io.to(sId).emit('privateMessageUpdated', { ...msg, reactions });
+        });
+      }
+      // Ümumi mesajlar onChildChanged vasitəsilə avtomatik yayımlanır
+    } catch (err) {
+      console.error("Reaksiya xətası:", err);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // ADMİN / MODERATOR MESAJ SİLMƏ SİSTEMİ
+  // -------------------------------------------------------------------------
+  socket.on('deleteMessage', async (data) => {
+    try {
+      const { msgId, isPrivate } = typeof data === 'string' ? { msgId: data, isPrivate: false } : data;
+
+      if (socket.role !== 'admin' && socket.role !== 'moderator') {
+        socket.emit('actionBlocked', { message: "Mesaj silmək üçün icazəniz yoxdur." });
+        return;
+      }
+
+      const path = isPrivate ? `private_messages/${msgId}` : `messages/${msgId}`;
+      const snap = await get(ref(db, path));
+      if (!snap.exists()) return;
+      const msg = snap.val();
+
+      // Moderator admin-in mesajını silə bilməz
+      if (socket.role === 'moderator') {
+        const authorData = await getUserData(msg.sender);
+        if (authorData && authorData.role === 'admin') {
+          socket.emit('actionBlocked', { message: "Admin-in mesajını silmək icazəniz yoxdur." });
+          return;
+        }
+      }
+
+      await update(ref(db, path), {
+        text: "🗑️ Bu mesaj silinib.",
+        mediaType: "text",
+        mediaUrl: "",
+        isDeleted: true
+      });
+
+      if (isPrivate) {
+        const targets = new Set([msg.sender, msg.recipient]);
+        targets.forEach((n) => {
+          const sId = activeUsers[n];
+          if (sId) io.to(sId).emit('privateMessageUpdated', { ...msg, text: "🗑️ Bu mesaj silinib.", mediaType: "text", mediaUrl: "", isDeleted: true });
+        });
+      }
+    } catch (err) {
+      console.error("Silinmə xətası:", err);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // İSTİFADƏÇİ ÖZ MESAJINI SİLMƏ
+  // -------------------------------------------------------------------------
+  socket.on('deleteOwnMessage', async (data) => {
+    try {
+      const { msgId, isPrivate } = data;
+      const path = isPrivate ? `private_messages/${msgId}` : `messages/${msgId}`;
+      const snap = await get(ref(db, path));
+      if (!snap.exists()) return;
+      const msg = snap.val();
+
+      if (msg.sender !== socket.nick) {
+        socket.emit('actionBlocked', { message: "Yalnız öz mesajınızı silə bilərsiniz." });
+        return;
+      }
+
+      await update(ref(db, path), {
+        text: "🗑️ Bu mesaj silinib.",
+        mediaType: "text",
+        mediaUrl: "",
+        isDeleted: true
+      });
+
+      if (isPrivate) {
+        const targets = new Set([msg.sender, msg.recipient]);
+        targets.forEach((n) => {
+          const sId = activeUsers[n];
+          if (sId) io.to(sId).emit('privateMessageUpdated', { ...msg, text: "🗑️ Bu mesaj silinib.", mediaType: "text", mediaUrl: "", isDeleted: true });
+        });
+      }
+    } catch (err) {
+      console.error("Öz mesajını silmə xətası:", err);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // QARA SİYAHI SİSTEMİ
+  // -------------------------------------------------------------------------
+  socket.on('banUser', async (data, callback) => {
+    try {
+      const { targetNick } = data;
+
+      if (socket.role !== 'admin' && socket.role !== 'moderator') {
+        return callback({ success: false, message: "Qara siyahıya əlavə etmək icazəniz yoxdur." });
+      }
+
+      const targetData = await getUserData(targetNick);
+      if (!targetData) {
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
+      }
+
+      // Moderator admin və ya başqa moderatoru banlaya bilməz
+      if (socket.role === 'moderator' && roleRank(targetData.role) >= roleRank('moderator')) {
+        return callback({ success: false, message: "Bu istifadəçini qara siyahıya əlavə etmək icazəniz yoxdur." });
+      }
+
+      await update(ref(db, 'users/' + targetNick), { isBanned: true });
+
+      // Onlayndırsa, bağlantısını kəs və siyahıdan çıxar
+      const targetSocketId = activeUsers[targetNick];
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('youAreBanned');
+        delete activeUsers[targetNick];
+      }
+
+      await broadcastUserList();
+      callback({ success: true, message: `${targetNick} qara siyahıya əlavə edildi.` });
+    } catch (err) {
+      console.error("Ban xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  socket.on('unbanUser', async (data, callback) => {
+    try {
+      const { targetNick } = data;
+      if (socket.role !== 'admin' && socket.role !== 'moderator') {
+        return callback({ success: false, message: "Bu əməliyyat üçün icazəniz yoxdur." });
+      }
+
+      const targetData = await getUserData(targetNick);
+      if (!targetData) {
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
+      }
+
+      if (socket.role === 'moderator' && roleRank(targetData.role) >= roleRank('moderator')) {
+        return callback({ success: false, message: "Bu istifadəçini qara siyahıdan çıxarmaq icazəniz yoxdur." });
+      }
+
+      await update(ref(db, 'users/' + targetNick), { isBanned: false });
+      await broadcastUserList();
+      callback({ success: true, message: `${targetNick} qara siyahıdan çıxarıldı.` });
+    } catch (err) {
+      console.error("Unban xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // ROL DƏYİŞMƏ: MODERATOR TƏYİN ETMƏ / GERİ ALMA (yalnız admin)
+  // -------------------------------------------------------------------------
+  socket.on('promoteToModerator', async (data, callback) => {
+    try {
+      const { targetNick } = data;
+      if (socket.role !== 'admin') {
+        return callback({ success: false, message: "Yalnız admin moderator təyin edə bilər." });
+      }
+
+      const targetData = await getUserData(targetNick);
+      if (!targetData) {
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
+      }
+      if (targetData.role === 'admin') {
+        return callback({ success: false, message: "Admin-in rolunu dəyişmək olmaz." });
+      }
+
+      await update(ref(db, 'users/' + targetNick), { role: 'moderator' });
+
+      const targetSocketId = activeUsers[targetNick];
+      if (targetSocketId) {
+        const targetSocket = io.sockets.sockets.get(targetSocketId);
+        if (targetSocket) targetSocket.role = 'moderator';
+        io.to(targetSocketId).emit('roleChanged', { role: 'moderator' });
+      }
+
+      await broadcastUserList();
+      callback({ success: true, message: `${targetNick} moderator təyin edildi.` });
+    } catch (err) {
+      console.error("Moderator təyin etmə xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  socket.on('demoteToUser', async (data, callback) => {
+    try {
+      const { targetNick } = data;
+      if (socket.role !== 'admin') {
+        return callback({ success: false, message: "Yalnız admin rol geri ala bilər." });
+      }
+
+      const targetData = await getUserData(targetNick);
+      if (!targetData) {
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
+      }
+      if (targetData.role === 'admin') {
+        return callback({ success: false, message: "Admin-in rolunu dəyişmək olmaz." });
+      }
+
+      await update(ref(db, 'users/' + targetNick), { role: 'user' });
+
+      const targetSocketId = activeUsers[targetNick];
+      if (targetSocketId) {
+        const targetSocket = io.sockets.sockets.get(targetSocketId);
+        if (targetSocket) targetSocket.role = 'user';
+        io.to(targetSocketId).emit('roleChanged', { role: 'user' });
+      }
+
+      await broadcastUserList();
+      callback({ success: true, message: `${targetNick} adi istifadəçi statusuna qaytarıldı.` });
+    } catch (err) {
+      console.error("Rol geri alma xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // HESAB SİLMƏ: ADMİN TƏRƏFİNDƏN İSTİFADƏÇİNİ SİLMƏ
+  // -------------------------------------------------------------------------
+  socket.on('deleteUserAccount', async (data, callback) => {
+    try {
+      const { targetNick } = data;
+      if (socket.role !== 'admin') {
+        return callback({ success: false, message: "Yalnız admin istifadəçi hesabını silə bilər." });
+      }
+
+      const targetData = await getUserData(targetNick);
+      if (!targetData) {
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
+      }
+
+      await remove(ref(db, 'users/' + targetNick));
+
+      const targetSocketId = activeUsers[targetNick];
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('accountDeleted');
+        delete activeUsers[targetNick];
+      }
+
+      await broadcastUserList();
+      callback({ success: true, message: `${targetNick} hesabı silindi.` });
+    } catch (err) {
+      console.error("Hesab silmə xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // HESAB SİLMƏ: İSTİFADƏÇİ ÖZ HESABINI SİLİR
+  // -------------------------------------------------------------------------
+  socket.on('deleteOwnAccount', async (data, callback) => {
+    try {
+      const { nick, password } = data;
+      if (!socket.nick || socket.nick !== nick) {
+        return callback({ success: false, message: "Bu əməliyyat üçün icazəniz yoxdur." });
+      }
+
+      const userData = await getUserData(nick);
+      if (!userData) {
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
+      }
+
+      // Google ilə qoşulan hesablarda şifrə olmaya bilər
+      if (userData.password !== null && userData.password !== password) {
+        return callback({ success: false, message: "Şifrə yanlışdır." });
+      }
+
+      await remove(ref(db, 'users/' + nick));
+      delete activeUsers[nick];
+      await broadcastUserList();
+
+      callback({ success: true, message: "Hesabınız uğurla silindi." });
+    } catch (err) {
+      console.error("Öz hesabını silmə xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // BAĞLANTI KƏSİLƏNDƏ
+  // -------------------------------------------------------------------------
+  socket.on('disconnect', () => {
+    if (socket.nick) {
+      delete activeUsers[socket.nick];
+      broadcastUserList();
+    }
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(`Server ${PORT} portunda aktivdir...`);
+});
