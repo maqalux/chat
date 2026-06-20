@@ -548,18 +548,19 @@ io.on('connection', (socket) => {
   // -------------------------------------------------------------------------
   // ADMİN / MODERATOR MESAJ SİLMƏ SİSTEMİ
   // -------------------------------------------------------------------------
-  socket.on('deleteMessage', async (data) => {
+  socket.on('deleteMessage', async (data, callback) => {
+    const cb = typeof callback === 'function' ? callback : () => {};
     try {
       const { msgId, isPrivate } = typeof data === 'string' ? { msgId: data, isPrivate: false } : data;
 
       if (socket.role !== 'admin' && socket.role !== 'moderator') {
         socket.emit('actionBlocked', { message: "Mesaj silmək üçün icazəniz yoxdur." });
-        return;
+        return cb({ success: false });
       }
 
       const path = isPrivate ? `private_messages/${msgId}` : `messages/${msgId}`;
       const snap = await get(ref(db, path));
-      if (!snap.exists()) return;
+      if (!snap.exists()) return cb({ success: false });
       const msg = snap.val();
 
       // Moderator admin-in mesajını silə bilməz
@@ -567,7 +568,7 @@ io.on('connection', (socket) => {
         const authorData = await getUserData(msg.sender);
         if (authorData && authorData.role === 'admin') {
           socket.emit('actionBlocked', { message: "Admin-in mesajını silmək icazəniz yoxdur." });
-          return;
+          return cb({ success: false });
         }
       }
 
@@ -585,25 +586,28 @@ io.on('connection', (socket) => {
           if (sId) io.to(sId).emit('privateMessageUpdated', { ...msg, text: "🗑️ Bu mesaj silinib.", mediaType: "text", mediaUrl: "", isDeleted: true });
         });
       }
+      cb({ success: true });
     } catch (err) {
       console.error("Silinmə xətası:", err);
+      cb({ success: false });
     }
   });
 
   // -------------------------------------------------------------------------
   // İSTİFADƏÇİ ÖZ MESAJINI SİLMƏ
   // -------------------------------------------------------------------------
-  socket.on('deleteOwnMessage', async (data) => {
+  socket.on('deleteOwnMessage', async (data, callback) => {
+    const cb = typeof callback === 'function' ? callback : () => {};
     try {
       const { msgId, isPrivate } = data;
       const path = isPrivate ? `private_messages/${msgId}` : `messages/${msgId}`;
       const snap = await get(ref(db, path));
-      if (!snap.exists()) return;
+      if (!snap.exists()) return cb({ success: false });
       const msg = snap.val();
 
       if (msg.sender !== socket.nick) {
         socket.emit('actionBlocked', { message: "Yalnız öz mesajınızı silə bilərsiniz." });
-        return;
+        return cb({ success: false });
       }
 
       await update(ref(db, path), {
@@ -620,8 +624,10 @@ io.on('connection', (socket) => {
           if (sId) io.to(sId).emit('privateMessageUpdated', { ...msg, text: "🗑️ Bu mesaj silinib.", mediaType: "text", mediaUrl: "", isDeleted: true });
         });
       }
+      cb({ success: true });
     } catch (err) {
       console.error("Öz mesajını silmə xətası:", err);
+      cb({ success: false });
     }
   });
 
@@ -632,8 +638,12 @@ io.on('connection', (socket) => {
     try {
       const { targetNick } = data;
 
-      if (socket.role !== 'admin' && socket.role !== 'moderator') {
-        return callback({ success: false, message: "Qara siyahıya əlavə etmək icazəniz yoxdur." });
+      if (!socket.nick) {
+        return callback({ success: false, message: "Bu əməliyyat üçün daxil olmalısınız." });
+      }
+
+      if (targetNick === socket.nick) {
+        return callback({ success: false, message: "Özünüzü qara siyahıya əlavə edə bilməzsiniz." });
       }
 
       const targetData = await getUserData(targetNick);
@@ -641,9 +651,23 @@ io.on('connection', (socket) => {
         return callback({ success: false, message: "İstifadəçi tapılmadı." });
       }
 
-      // Moderator admin və ya başqa moderatoru banlaya bilməz
-      if (socket.role === 'moderator' && roleRank(targetData.role) >= roleRank('moderator')) {
-        return callback({ success: false, message: "Bu istifadəçini qara siyahıya əlavə etmək icazəniz yoxdur." });
+      // İCAZƏ QAYDALARI:
+      // Admin -> admin istisna hamını banlaya bilər
+      // Moderator -> yalnız adi istifadəçiləri banlaya bilər (admin və digər moderatoru banlaya bilməz)
+      // Adi istifadəçi -> yalnız digər adi istifadəçini banlaya bilər (admin/moderatoru banlaya bilməz)
+      if (socket.role === 'admin') {
+        if (targetData.role === 'admin') {
+          return callback({ success: false, message: "Admin-i qara siyahıya əlavə etmək olmaz." });
+        }
+      } else if (socket.role === 'moderator') {
+        if (roleRank(targetData.role) >= roleRank('moderator')) {
+          return callback({ success: false, message: "Bu istifadəçini qara siyahıya əlavə etmək icazəniz yoxdur." });
+        }
+      } else {
+        // adi istifadəçi
+        if (roleRank(targetData.role) > roleRank('user')) {
+          return callback({ success: false, message: "Admin və ya moderatoru qara siyahıya əlavə edə bilməzsiniz." });
+        }
       }
 
       await update(ref(db, 'users/' + targetNick), { isBanned: true });
@@ -813,6 +837,66 @@ io.on('connection', (socket) => {
       callback({ success: true, message: "Hesabınız uğurla silindi." });
     } catch (err) {
       console.error("Öz hesabını silmə xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // ADMİN: BİR İSTİFADƏÇİNİN BÜTÜN MESAJLARINI SİLMƏ
+  // -------------------------------------------------------------------------
+  socket.on('deleteAllMessagesOfUser', async (data, callback) => {
+    try {
+      const { targetNick } = data;
+      if (socket.role !== 'admin') {
+        return callback({ success: false, message: "Yalnız admin bütün mesajları silə bilər." });
+      }
+
+      const targetData = await getUserData(targetNick);
+      if (!targetData) {
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
+      }
+
+      // Ümumi mesajlar
+      const msgsSnap = await get(messagesRef);
+      if (msgsSnap.exists()) {
+        const allMsgs = msgsSnap.val();
+        const updates = {};
+        Object.keys(allMsgs).forEach((key) => {
+          if (allMsgs[key].sender === targetNick && !allMsgs[key].isDeleted) {
+            updates[`messages/${key}/text`] = "🗑️ Bu mesaj silinib.";
+            updates[`messages/${key}/mediaType`] = "text";
+            updates[`messages/${key}/mediaUrl`] = "";
+            updates[`messages/${key}/isDeleted`] = true;
+          }
+        });
+        if (Object.keys(updates).length) await update(ref(db), updates);
+      }
+
+      // Şəxsi mesajlar
+      const privSnap = await get(privateMessagesRef);
+      if (privSnap.exists()) {
+        const allPriv = privSnap.val();
+        for (const key of Object.keys(allPriv)) {
+          const m = allPriv[key];
+          if (m.sender === targetNick && !m.isDeleted) {
+            await update(ref(db, `private_messages/${key}`), {
+              text: "🗑️ Bu mesaj silinib.",
+              mediaType: "text",
+              mediaUrl: "",
+              isDeleted: true
+            });
+            const targets = new Set([m.sender, m.recipient]);
+            targets.forEach((n) => {
+              const sId = activeUsers[n];
+              if (sId) io.to(sId).emit('privateMessageUpdated', { ...m, text: "🗑️ Bu mesaj silinib.", mediaType: "text", mediaUrl: "", isDeleted: true });
+            });
+          }
+        }
+      }
+
+      callback({ success: true, message: `${targetNick} istifadəçisinin bütün mesajları silindi.` });
+    } catch (err) {
+      console.error("Bütün mesajları silmə xətası:", err);
       callback({ success: false, message: "Sistem xətası baş verdi." });
     }
   });
