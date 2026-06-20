@@ -540,4 +540,294 @@ io.on('connection', (socket) => {
         });
       }
       // Ümumi mesajlar onChildChanged vasitəsilə avtomatik yayımlanır
-    } catch 
+    } catch (err) {
+      console.error("Reaksiya xətası:", err);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // ADMİN / MODERATOR MESAJ SİLMƏ SİSTEMİ
+  // -------------------------------------------------------------------------
+  socket.on('deleteMessage', async (data) => {
+    try {
+      const { msgId, isPrivate } = typeof data === 'string' ? { msgId: data, isPrivate: false } : data;
+
+      if (socket.role !== 'admin' && socket.role !== 'moderator') {
+        socket.emit('actionBlocked', { message: "Mesaj silmək üçün icazəniz yoxdur." });
+        return;
+      }
+
+      const path = isPrivate ? `private_messages/${msgId}` : `messages/${msgId}`;
+      const snap = await get(ref(db, path));
+      if (!snap.exists()) return;
+      const msg = snap.val();
+
+      // Moderator admin-in mesajını silə bilməz
+      if (socket.role === 'moderator') {
+        const authorData = await getUserData(msg.sender);
+        if (authorData && authorData.role === 'admin') {
+          socket.emit('actionBlocked', { message: "Admin-in mesajını silmək icazəniz yoxdur." });
+          return;
+        }
+      }
+
+      await update(ref(db, path), {
+        text: "🗑️ Bu mesaj silinib.",
+        mediaType: "text",
+        mediaUrl: "",
+        isDeleted: true
+      });
+
+      if (isPrivate) {
+        const targets = new Set([msg.sender, msg.recipient]);
+        targets.forEach((n) => {
+          const sId = activeUsers[n];
+          if (sId) io.to(sId).emit('privateMessageUpdated', { ...msg, text: "🗑️ Bu mesaj silinib.", mediaType: "text", mediaUrl: "", isDeleted: true });
+        });
+      }
+    } catch (err) {
+      console.error("Silinmə xətası:", err);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // İSTİFADƏÇİ ÖZ MESAJINI SİLMƏ
+  // -------------------------------------------------------------------------
+  socket.on('deleteOwnMessage', async (data) => {
+    try {
+      const { msgId, isPrivate } = data;
+      const path = isPrivate ? `private_messages/${msgId}` : `messages/${msgId}`;
+      const snap = await get(ref(db, path));
+      if (!snap.exists()) return;
+      const msg = snap.val();
+
+      if (msg.sender !== socket.nick) {
+        socket.emit('actionBlocked', { message: "Yalnız öz mesajınızı silə bilərsiniz." });
+        return;
+      }
+
+      await update(ref(db, path), {
+        text: "🗑️ Bu mesaj silinib.",
+        mediaType: "text",
+        mediaUrl: "",
+        isDeleted: true
+      });
+
+      if (isPrivate) {
+        const targets = new Set([msg.sender, msg.recipient]);
+        targets.forEach((n) => {
+          const sId = activeUsers[n];
+          if (sId) io.to(sId).emit('privateMessageUpdated', { ...msg, text: "🗑️ Bu mesaj silinib.", mediaType: "text", mediaUrl: "", isDeleted: true });
+        });
+      }
+    } catch (err) {
+      console.error("Öz mesajını silmə xətası:", err);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // QARA SİYAHI SİSTEMİ
+  // -------------------------------------------------------------------------
+  socket.on('banUser', async (data, callback) => {
+    try {
+      const { targetNick } = data;
+
+      if (socket.role !== 'admin' && socket.role !== 'moderator') {
+        return callback({ success: false, message: "Qara siyahıya əlavə etmək icazəniz yoxdur." });
+      }
+
+      const targetData = await getUserData(targetNick);
+      if (!targetData) {
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
+      }
+
+      // Moderator admin və ya başqa moderatoru banlaya bilməz
+      if (socket.role === 'moderator' && roleRank(targetData.role) >= roleRank('moderator')) {
+        return callback({ success: false, message: "Bu istifadəçini qara siyahıya əlavə etmək icazəniz yoxdur." });
+      }
+
+      await update(ref(db, 'users/' + targetNick), { isBanned: true });
+
+      // Onlayndırsa, bağlantısını kəs və siyahıdan çıxar
+      const targetSocketId = activeUsers[targetNick];
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('youAreBanned');
+        delete activeUsers[targetNick];
+      }
+
+      await broadcastUserList();
+      callback({ success: true, message: `${targetNick} qara siyahıya əlavə edildi.` });
+    } catch (err) {
+      console.error("Ban xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  socket.on('unbanUser', async (data, callback) => {
+    try {
+      const { targetNick } = data;
+      if (socket.role !== 'admin' && socket.role !== 'moderator') {
+        return callback({ success: false, message: "Bu əməliyyat üçün icazəniz yoxdur." });
+      }
+
+      const targetData = await getUserData(targetNick);
+      if (!targetData) {
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
+      }
+
+      if (socket.role === 'moderator' && roleRank(targetData.role) >= roleRank('moderator')) {
+        return callback({ success: false, message: "Bu istifadəçini qara siyahıdan çıxarmaq icazəniz yoxdur." });
+      }
+
+      await update(ref(db, 'users/' + targetNick), { isBanned: false });
+      await broadcastUserList();
+      callback({ success: true, message: `${targetNick} qara siyahıdan çıxarıldı.` });
+    } catch (err) {
+      console.error("Unban xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // ROL DƏYİŞMƏ: MODERATOR TƏYİN ETMƏ / GERİ ALMA (yalnız admin)
+  // -------------------------------------------------------------------------
+  socket.on('promoteToModerator', async (data, callback) => {
+    try {
+      const { targetNick } = data;
+      if (socket.role !== 'admin') {
+        return callback({ success: false, message: "Yalnız admin moderator təyin edə bilər." });
+      }
+
+      const targetData = await getUserData(targetNick);
+      if (!targetData) {
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
+      }
+      if (targetData.role === 'admin') {
+        return callback({ success: false, message: "Admin-in rolunu dəyişmək olmaz." });
+      }
+
+      await update(ref(db, 'users/' + targetNick), { role: 'moderator' });
+
+      const targetSocketId = activeUsers[targetNick];
+      if (targetSocketId) {
+        const targetSocket = io.sockets.sockets.get(targetSocketId);
+        if (targetSocket) targetSocket.role = 'moderator';
+        io.to(targetSocketId).emit('roleChanged', { role: 'moderator' });
+      }
+
+      await broadcastUserList();
+      callback({ success: true, message: `${targetNick} moderator təyin edildi.` });
+    } catch (err) {
+      console.error("Moderator təyin etmə xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  socket.on('demoteToUser', async (data, callback) => {
+    try {
+      const { targetNick } = data;
+      if (socket.role !== 'admin') {
+        return callback({ success: false, message: "Yalnız admin rol geri ala bilər." });
+      }
+
+      const targetData = await getUserData(targetNick);
+      if (!targetData) {
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
+      }
+      if (targetData.role === 'admin') {
+        return callback({ success: false, message: "Admin-in rolunu dəyişmək olmaz." });
+      }
+
+      await update(ref(db, 'users/' + targetNick), { role: 'user' });
+
+      const targetSocketId = activeUsers[targetNick];
+      if (targetSocketId) {
+        const targetSocket = io.sockets.sockets.get(targetSocketId);
+        if (targetSocket) targetSocket.role = 'user';
+        io.to(targetSocketId).emit('roleChanged', { role: 'user' });
+      }
+
+      await broadcastUserList();
+      callback({ success: true, message: `${targetNick} adi istifadəçi statusuna qaytarıldı.` });
+    } catch (err) {
+      console.error("Rol geri alma xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // HESAB SİLMƏ: ADMİN TƏRƏFİNDƏN İSTİFADƏÇİNİ SİLMƏ
+  // -------------------------------------------------------------------------
+  socket.on('deleteUserAccount', async (data, callback) => {
+    try {
+      const { targetNick } = data;
+      if (socket.role !== 'admin') {
+        return callback({ success: false, message: "Yalnız admin istifadəçi hesabını silə bilər." });
+      }
+
+      const targetData = await getUserData(targetNick);
+      if (!targetData) {
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
+      }
+
+      await remove(ref(db, 'users/' + targetNick));
+
+      const targetSocketId = activeUsers[targetNick];
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('accountDeleted');
+        delete activeUsers[targetNick];
+      }
+
+      await broadcastUserList();
+      callback({ success: true, message: `${targetNick} hesabı silindi.` });
+    } catch (err) {
+      console.error("Hesab silmə xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // HESAB SİLMƏ: İSTİFADƏÇİ ÖZ HESABINI SİLİR
+  // -------------------------------------------------------------------------
+  socket.on('deleteOwnAccount', async (data, callback) => {
+    try {
+      const { nick, password } = data;
+      if (!socket.nick || socket.nick !== nick) {
+        return callback({ success: false, message: "Bu əməliyyat üçün icazəniz yoxdur." });
+      }
+
+      const userData = await getUserData(nick);
+      if (!userData) {
+        return callback({ success: false, message: "İstifadəçi tapılmadı." });
+      }
+
+      // Google ilə qoşulan hesablarda şifrə olmaya bilər
+      if (userData.password !== null && userData.password !== password) {
+        return callback({ success: false, message: "Şifrə yanlışdır." });
+      }
+
+      await remove(ref(db, 'users/' + nick));
+      delete activeUsers[nick];
+      await broadcastUserList();
+
+      callback({ success: true, message: "Hesabınız uğurla silindi." });
+    } catch (err) {
+      console.error("Öz hesabını silmə xətası:", err);
+      callback({ success: false, message: "Sistem xətası baş verdi." });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // BAĞLANTI KƏSİLƏNDƏ
+  // -------------------------------------------------------------------------
+  socket.on('disconnect', () => {
+    if (socket.nick) {
+      delete activeUsers[socket.nick];
+      broadcastUserList();
+    }
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(`Server ${PORT} portunda aktivdir...`);
+});
